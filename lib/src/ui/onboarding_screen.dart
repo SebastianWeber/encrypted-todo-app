@@ -29,6 +29,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    // Vom Installationsskript hinterlegte Erstkonfiguration übernehmen.
+    widget.state.loadProvision().then((prov) {
+      if (prov == null || !mounted) return;
+      setState(() {
+        _owner.text = prov['owner'] as String? ?? _owner.text;
+        _repo.text = prov['repo'] as String? ?? _repo.text;
+        _branch.text = prov['branch'] as String? ?? _branch.text;
+        _token.text = prov['token'] as String? ?? _token.text;
+        final pass = prov['passphrase'] as String?;
+        if (pass != null) {
+          _passphrase.text = pass;
+          _passphrase2.text = pass;
+        }
+      });
+    });
+  }
+
+  @override
   void dispose() {
     for (final c in [_owner, _repo, _branch, _token, _passphrase, _passphrase2]) {
       c.dispose();

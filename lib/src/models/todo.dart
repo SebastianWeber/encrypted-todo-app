@@ -192,6 +192,28 @@ class Todo {
   static DateTime? _parseDate(dynamic value) =>
       value == null ? null : DateTime.tryParse(value as String);
 
+  /// Ganztägig über mehrere Tage (Start- bis Fälligkeitstag)?
+  bool get isMultiDay {
+    if (start == null || due == null || dueHasTime) return false;
+    return DateTime(start!.year, start!.month, start!.day)
+        .isBefore(DateTime(due!.year, due!.month, due!.day));
+  }
+
+  /// Alle Kalendertage, die dieses ToDo belegt: der Fälligkeitstag, bei
+  /// mehrtägigen ToDos der gesamte Bereich von Start bis Fälligkeit.
+  List<DateTime> occupiedDays() {
+    if (due == null) return const [];
+    final end = DateTime(due!.year, due!.month, due!.day);
+    if (!isMultiDay) return [end];
+    final days = <DateTime>[];
+    var d = DateTime(start!.year, start!.month, start!.day);
+    while (!d.isAfter(end)) {
+      days.add(d);
+      d = DateTime(d.year, d.month, d.day + 1);
+    }
+    return days;
+  }
+
   /// Tiefe Kopie (für Bearbeitung ohne Seiteneffekte).
   Todo copy() => Todo.fromJson(toJson());
 }

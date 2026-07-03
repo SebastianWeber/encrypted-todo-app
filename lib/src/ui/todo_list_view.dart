@@ -219,7 +219,10 @@ class TodoTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitleParts = <String>[
-      if (todo.due != null) dueLabel(todo.due!, todo.dueHasTime),
+      if (todo.due != null)
+        todo.isMultiDay
+            ? '${formatDate(todo.start!)} – ${formatDate(todo.due!)}'
+            : dueLabel(todo.due!, todo.dueHasTime),
       if (todo.subtasks.isNotEmpty)
         '${todo.subtasks.where((s) => s.done).length}/${todo.subtasks.length} Teilschritte',
       if (todo.list != null && todo.list!.isNotEmpty) todo.list!,

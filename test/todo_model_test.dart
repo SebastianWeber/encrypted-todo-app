@@ -54,6 +54,43 @@ void main() {
     expect(todo.isOverdue, false);
   });
 
+  group('Mehrtägige ToDos', () {
+    test('occupiedDays: eintägig nur Fälligkeitstag', () {
+      final t = Todo(title: 'x', due: DateTime(2026, 7, 10));
+      expect(t.isMultiDay, false);
+      expect(t.occupiedDays(), [DateTime(2026, 7, 10)]);
+    });
+
+    test('occupiedDays: Bereich inkl. Monatswechsel', () {
+      final t = Todo(
+          title: 'Konferenzreise',
+          start: DateTime(2026, 7, 30),
+          due: DateTime(2026, 8, 2));
+      expect(t.isMultiDay, true);
+      expect(t.occupiedDays(), [
+        DateTime(2026, 7, 30),
+        DateTime(2026, 7, 31),
+        DateTime(2026, 8, 1),
+        DateTime(2026, 8, 2),
+      ]);
+    });
+
+    test('mit Uhrzeit nicht mehrtägig', () {
+      final t = Todo(
+          title: 'x',
+          start: DateTime(2026, 7, 1),
+          due: DateTime(2026, 7, 3, 14, 0),
+          dueHasTime: true);
+      expect(t.isMultiDay, false);
+      expect(t.occupiedDays(), [DateTime(2026, 7, 3)]);
+    });
+
+    test('ohne Fälligkeit keine Kalendertage', () {
+      expect(Todo(title: 'x', start: DateTime(2026, 7, 1)).occupiedDays(),
+          isEmpty);
+    });
+  });
+
   group('Wiederholung', () {
     test('täglich/wöchentlich addieren Tage', () {
       final from = DateTime(2026, 7, 3);

@@ -32,8 +32,10 @@ class _CalendarViewState extends State<CalendarView> {
   Map<DateTime, List<Todo>> get _byDay {
     final map = <DateTime, List<Todo>>{};
     for (final t in widget.state.todos) {
-      if (t.due == null) continue;
-      map.putIfAbsent(dateOnly(t.due!), () => []).add(t);
+      // Mehrtägige ToDos belegen jeden Tag von Start bis Fälligkeit.
+      for (final day in t.occupiedDays()) {
+        map.putIfAbsent(day, () => []).add(t);
+      }
     }
     return map;
   }

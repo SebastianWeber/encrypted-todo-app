@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/widgets.dart';
@@ -89,6 +90,30 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   // ------------------------------------------------------ Einrichtung
 
+  File get _provisionFile => File('$baseDir/provision.json');
+
+  /// Vom Installationsskript hinterlegte Erstkonfiguration
+  /// (owner/repo/branch/token/passphrase) — füllt das Onboarding vor.
+  Future<Map<String, dynamic>?> loadProvision() async {
+    try {
+      if (!await _provisionFile.exists()) return null;
+      var raw = await _provisionFile.readAsString();
+      // PowerShell schreibt UTF-8 mit BOM.
+      if (raw.startsWith('﻿')) raw = raw.substring(1);
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _deleteProvision() async {
+    try {
+      if (await _provisionFile.exists()) await _provisionFile.delete();
+    } catch (_) {
+      // nicht kritisch
+    }
+  }
+
   /// Prüft GitHub-Zugangsdaten; liefert null bei Erfolg, sonst Fehlertext.
   Future<String?> testConnection({
     required String owner,
@@ -157,6 +182,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     await configStore.save(config!);
     _key = key;
     await _openStore();
+    await _deleteProvision();
     notifyListeners();
     unawaited(syncNow(silent: true));
   }

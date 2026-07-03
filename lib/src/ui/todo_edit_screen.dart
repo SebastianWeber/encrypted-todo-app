@@ -121,6 +121,13 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
         .toList();
     final interval = int.tryParse(_intervalInput.text) ?? 1;
 
+    // Verdrehte Datumsangaben stillschweigend korrigieren.
+    if (_start != null && _due != null && _start!.isAfter(_due!)) {
+      final tmp = _start;
+      _start = _due;
+      _due = tmp;
+    }
+
     final todo = widget.todo ?? Todo(title: _title.text.trim());
     todo
       ..title = _title.text.trim()
@@ -266,7 +273,7 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.play_arrow),
                   title: Text(_start == null
-                      ? 'Startdatum wählen (optional)'
+                      ? 'Startdatum wählen (für mehrtägige ToDos)'
                       : 'Start: ${formatDate(_start!)}'),
                   onTap: () async {
                     final d = await _pickDate(_start);

@@ -15,6 +15,8 @@ aus einer Passphrase abgeleitet. GitHub sieht ausschließlich Ciphertext
 - Kalenderansicht (Monatsraster + Tagesagenda, Überfällig-Hervorhebung)
 - Felder nach RFC-5545-Vorbild: Status, Priorität, Fälligkeit, Start, Tags,
   Liste, Teilschritte, Wiederholungen, Erinnerungen
+- Mehrtägige ganztägige ToDos (Start- + Fälligkeitsdatum); der Kalender
+  zeigt sie über den gesamten Zeitraum
 - Erinnerungen als Android-Benachrichtigungen (exakte Alarme, reboot-fest)
 - Zugangsdaten/Schlüssel sicher lokal: Windows DPAPI bzw. Android Keystore
 
@@ -83,6 +85,23 @@ https://sebastianweber.github.io/encrypted-todo-app/repo?fingerprint=<FINGERPRIN
 
 GitHub Pages muss einmalig aktiviert werden (*Settings → Pages → Branch:
 gh-pages*), nachdem der erste Release-Lauf den Branch erzeugt hat.
+
+## Windows: Installation & Updates per Skript
+
+[scripts/install-windows.ps1](scripts/install-windows.ps1) lädt das neueste
+Release-ZIP, entpackt es nach `%LOCALAPPDATA%\EncryptedTodo` und legt eine
+Startmenü-Verknüpfung an:
+
+```powershell
+.\scripts\install-windows.ps1                 # Update (Konfiguration bleibt erhalten)
+.\scripts\install-windows.ps1 -Owner ... -Repo ... -Token ... [-Passphrase ...]
+```
+
+Mit Parametern wird zusätzlich eine `provision.json` hinterlegt, die die App
+beim ersten Start ins Onboarding übernimmt (und danach löscht). Zugangsdaten,
+Schlüssel und lokale Daten überleben Updates — sie liegen im Windows
+Credential Manager bzw. unter `%APPDATA%\de.sweber\encrypted_todo_app`,
+nicht im Programmordner.
 
 ## Einrichtung der App
 
