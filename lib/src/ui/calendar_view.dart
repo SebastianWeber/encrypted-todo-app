@@ -60,7 +60,8 @@ class _CalendarViewState extends State<CalendarView> {
     final noDue = widget.state.todos
         .where((t) => !t.isDone && t.due == null)
         .toList();
-    final selectedTodos = (byDay[_selected] ?? const <Todo>[])
+    // Kopie statt in-place: byDay kann leere unveränderliche Listen liefern.
+    final selectedTodos = [...?byDay[_selected]]
       ..sort((a, b) => a.due!.compareTo(b.due!));
 
     // Raster: Montag als Wochenstart.
