@@ -100,7 +100,9 @@ class _TodoListViewState extends State<TodoListView> {
 
   Future<void> _edit(Todo todo) async {
     final result = await Navigator.of(context).push<Object>(
-      MaterialPageRoute(builder: (_) => TodoEditScreen(todo: todo)),
+      MaterialPageRoute(
+          builder: (_) => TodoEditScreen(
+              todo: todo, existingTags: widget.state.allTags)),
     );
     if (result is Todo) await widget.state.saveTodo(result);
     if (result == TodoEditScreen.deleted) await widget.state.deleteTodo(todo);
@@ -108,8 +110,7 @@ class _TodoListViewState extends State<TodoListView> {
 
   @override
   Widget build(BuildContext context) {
-    final allTags =
-        widget.state.todos.expand((t) => t.tags).toSet().toList()..sort();
+    final allTags = widget.state.allTags;
     final grouped = _grouped;
 
     return Column(

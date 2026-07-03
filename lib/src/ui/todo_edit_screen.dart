@@ -7,12 +7,15 @@ import 'format.dart';
 ///
 /// Liefert per Navigator.pop: das gespeicherte [Todo], [deleted] oder null.
 class TodoEditScreen extends StatefulWidget {
-  const TodoEditScreen({super.key, this.todo});
+  const TodoEditScreen({super.key, this.todo, this.existingTags = const []});
 
   /// Sentinel-Rückgabewert für "ToDo löschen".
   static const Object deleted = 'deleted';
 
   final Todo? todo;
+
+  /// Bereits vergebene Tags — Grundlage der Autovervollständigung.
+  final List<String> existingTags;
 
   @override
   State<TodoEditScreen> createState() => _TodoEditScreenState();
@@ -26,6 +29,7 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
   late final TextEditingController _list;
   final _subtaskInput = TextEditingController();
   final _intervalInput = TextEditingController(text: '1');
+  final _tagsFocus = FocusNode();
 
   late TodoStatus _status;
   late TodoPriority _priority;
@@ -67,6 +71,7 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
     ]) {
       c.dispose();
     }
+    _tagsFocus.dispose();
     super.dispose();
   }
 
@@ -118,7 +123,9 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
         .split(',')
         .map((t) => t.trim().replaceAll('#', ''))
         .where((t) => t.isNotEmpty)
-        .toList();
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     final interval = int.tryParse(_intervalInput.text) ?? 1;
 
     // Verdrehte Datumsangaben stillschweigend korrigieren.
@@ -364,12 +371,70 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
                 ]),
                 const SizedBox(height: 16),
                 _sectionTitle('Organisation'),
-                TextFormField(
-                  controller: _tags,
-                  decoration: const InputDecoration(
-                      labelText: 'Tags (durch Komma getrennt)',
-                      hintText: 'z. B. arbeit, einkauf',
-                      border: OutlineInputBorder()),
+                RawAutocomplete<String>(
+                  textEditingController: _tags,
+                  focusNode: _tagsFocus,
+                  optionsBuilder: (value) {
+                    // Vorschläge fürs letzte Komma-Segment aus dem Bestand.
+                    final parts = value.text.split(',');
+                    final current = parts.last.trim().toLowerCase();
+                    if (current.isEmpty) return const Iterable<String>.empty();
+                    final used = parts
+                        .take(parts.length - 1)
+                        .map((p) => p.trim().toLowerCase())
+                        .toSet();
+                    return widget.existingTags.where((t) {
+                      final lower = t.toLowerCase();
+                      return lower.startsWith(current) &&
+                          lower != current &&
+                          !used.contains(lower);
+                    });
+                  },
+                  onSelected: (selection) {
+                    final parts = _tags.text.split(',');
+                    parts[parts.length - 1] = selection;
+                    final text =
+                        '${parts.map((p) => p.trim()).where((p) => p.isNotEmpty).join(', ')}, ';
+                    _tags.value = TextEditingValue(
+                      text: text,
+                      selection:
+                          TextSelection.collapsed(offset: text.length),
+                    );
+                  },
+                  fieldViewBuilder:
+                      (context, controller, focusNode, onFieldSubmitted) =>
+                          TextFormField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(
+                        labelText: 'Tags (durch Komma getrennt)',
+                        hintText: 'z. B. arbeit, einkauf',
+                        border: OutlineInputBorder()),
+                  ),
+                  optionsViewBuilder: (context, onSelected, options) => Align(
+                    alignment: Alignment.topLeft,
+                    child: Material(
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(8),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                            maxHeight: 200, maxWidth: 320),
+                        child: ListView(
+                          padding: EdgeInsets.zero,
+                          shrinkWrap: true,
+                          children: [
+                            for (final option in options)
+                              ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.tag, size: 18),
+                                title: Text(option),
+                                onTap: () => onSelected(option),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(

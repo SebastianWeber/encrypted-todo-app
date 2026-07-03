@@ -6,9 +6,49 @@ import 'format.dart';
 import 'todo_edit_screen.dart';
 import 'todo_list_view.dart';
 
+/// Farbpalette für die Bänder mehrtägiger ToDos.
+const List<Color> kBandColors = [
+  Colors.teal,
+  Colors.indigo,
+  Colors.orange,
+  Colors.purple,
+  Colors.pink,
+  Colors.brown,
+];
+
+Color bandColorFor(Todo t) =>
+    kBandColors[t.id.codeUnits.fold<int>(0, (a, b) => a + b) %
+        kBandColors.length];
+
+/// Ordnet mehrtägigen ToDos Spuren zu, sodass sich überlappende Zeiträume
+/// nicht dieselbe Zeile teilen. Gierige Intervall-Zuordnung: kleinste freie
+/// Spur, sortiert nach Startdatum.
+Map<String, int> assignCalendarLanes(Iterable<Todo> multiDayTodos) {
+  final sorted = multiDayTodos.toList()
+    ..sort((a, b) {
+      final c = a.start!.compareTo(b.start!);
+      return c != 0 ? c : a.id.compareTo(b.id);
+    });
+  final laneEnds = <DateTime>[];
+  final lanes = <String, int>{};
+  for (final t in sorted) {
+    final s = dateOnly(t.start!);
+    final e = dateOnly(t.due!);
+    var lane = laneEnds.indexWhere((end) => end.isBefore(s));
+    if (lane == -1) {
+      laneEnds.add(e);
+      lane = laneEnds.length - 1;
+    } else {
+      laneEnds[lane] = e;
+    }
+    lanes[t.id] = lane;
+  }
+  return lanes;
+}
+
 /// Kalendarische Aufbereitung: Monatsraster mit Markierungen, darunter die
 /// Agenda des gewählten Tags. Überfällige und terminlose ToDos in eigenen
-/// Bereichen.
+/// Bereichen. Mehrtägige ToDos erscheinen als durchgehende farbige Bänder.
 class CalendarView extends StatefulWidget {
   const CalendarView({super.key, required this.state});
 
@@ -46,7 +86,9 @@ class _CalendarViewState extends State<CalendarView> {
 
   Future<void> _edit(Todo todo) async {
     final result = await Navigator.of(context).push<Object>(
-      MaterialPageRoute(builder: (_) => TodoEditScreen(todo: todo)),
+      MaterialPageRoute(
+          builder: (_) => TodoEditScreen(
+              todo: todo, existingTags: widget.state.allTags)),
     );
     if (result is Todo) await widget.state.saveTodo(result);
     if (result == TodoEditScreen.deleted) await widget.state.deleteTodo(todo);
@@ -55,6 +97,9 @@ class _CalendarViewState extends State<CalendarView> {
   @override
   Widget build(BuildContext context) {
     final byDay = _byDay;
+    final multiDay =
+        widget.state.todos.where((t) => t.isMultiDay && !t.isDone).toList();
+    final lanes = assignCalendarLanes(multiDay);
     final overdue = widget.state.todos
         .where((t) => t.isOverdue)
         .toList()
@@ -129,6 +174,8 @@ class _CalendarViewState extends State<CalendarView> {
                       gridStart.add(Duration(days: week * 7 + wd)),
                       byDay,
                       today,
+                      multiDay,
+                      lanes,
                     ),
                   ),
               ],
@@ -188,24 +235,40 @@ class _CalendarViewState extends State<CalendarView> {
     );
   }
 
-  Widget _dayCell(
-      DateTime day, Map<DateTime, List<Todo>> byDay, DateTime today) {
+  Widget _dayCell(DateTime day, Map<DateTime, List<Todo>> byDay,
+      DateTime today, List<Todo> multiDay, Map<String, int> lanes) {
+    final cellDay = dateOnly(day);
     final inMonth = day.month == _month.month;
     final isToday = isSameDay(day, today);
     final isSelected = isSameDay(day, _selected);
-    final todos = byDay[dateOnly(day)] ?? const <Todo>[];
-    final open = todos.where((t) => !t.isDone).length;
-    final hasOverdue = todos.any((t) => t.isOverdue);
+    final todos = byDay[cellDay] ?? const <Todo>[];
+    // Punkte nur für eintägige ToDos; mehrtägige bekommen Bänder.
+    final singleDay = todos.where((t) => !t.isMultiDay).toList();
+    final open = singleDay.where((t) => !t.isDone).length;
+    final hasOverdue = singleDay.any((t) => t.isOverdue);
+
+    // Bänder dieses Tages, stabil nach Spur sortiert (max. 3 Spuren).
+    const maxLanes = 3;
+    final bands = <int, Todo>{};
+    for (final t in multiDay) {
+      final lane = lanes[t.id]!;
+      if (lane >= maxLanes) continue;
+      final s = dateOnly(t.start!);
+      final e = dateOnly(t.due!);
+      if (!cellDay.isBefore(s) && !cellDay.isAfter(e)) bands[lane] = t;
+    }
+    final laneCount =
+        bands.isEmpty ? 0 : (bands.keys.reduce((a, b) => a > b ? a : b) + 1);
 
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => setState(() => _selected = dateOnly(day)),
+      onTap: () => setState(() => _selected = cellDay),
       child: Container(
-        height: 52,
-        margin: const EdgeInsets.all(1),
+        height: 58,
+        // Kein horizontaler Rand: Bänder mehrtägiger ToDos sollen sich
+        // über Zellgrenzen hinweg zu einer Linie verbinden.
+        margin: const EdgeInsets.symmetric(vertical: 1),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
           color: isSelected
               ? scheme.primaryContainer
               : isToday
@@ -220,17 +283,15 @@ class _CalendarViewState extends State<CalendarView> {
               '${day.day}',
               style: TextStyle(
                 fontWeight: isToday ? FontWeight.bold : null,
-                color: inMonth
-                    ? null
-                    : Theme.of(context).disabledColor,
+                color: inMonth ? null : Theme.of(context).disabledColor,
               ),
             ),
             const SizedBox(height: 2),
-            if (todos.isNotEmpty)
+            if (singleDay.isNotEmpty)
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  for (var i = 0; i < todos.length.clamp(0, 3); i++)
+                  for (var i = 0; i < singleDay.length.clamp(0, 3); i++)
                     Container(
                       width: 6,
                       height: 6,
@@ -248,7 +309,40 @@ class _CalendarViewState extends State<CalendarView> {
               )
             else
               const SizedBox(height: 6),
+            const SizedBox(height: 2),
+            SizedBox(
+              height: maxLanes * 4.0,
+              child: Column(
+                children: [
+                  for (var lane = 0; lane < laneCount; lane++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 1),
+                      child: bands[lane] == null
+                          ? const SizedBox(height: 3)
+                          : _bandSegment(bands[lane]!, cellDay),
+                    ),
+                ],
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Ein Tagessegment des Bandes: runde Enden nur am ersten/letzten Tag,
+  /// dazwischen kantenlos — ergibt über die Zellen hinweg eine Linie.
+  Widget _bandSegment(Todo t, DateTime day) {
+    final isFirst = isSameDay(day, t.start!);
+    final isLast = isSameDay(day, t.due!);
+    return Container(
+      height: 3,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bandColorFor(t),
+        borderRadius: BorderRadius.horizontal(
+          left: isFirst ? const Radius.circular(2) : Radius.zero,
+          right: isLast ? const Radius.circular(2) : Radius.zero,
         ),
       ),
     );

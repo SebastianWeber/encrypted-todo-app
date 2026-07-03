@@ -48,6 +48,11 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       config != null && _key == null;
 
   List<Todo> get todos => _store?.todos ?? const [];
+
+  /// Alle bereits vergebenen Tags, alphabetisch (für Filter und
+  /// Autovervollständigung).
+  List<String> get allTags => {for (final t in todos) ...t.tags}.toList()
+    ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   int get pendingCount => _store?.pendingCount ?? 0;
   DateTime? get lastSync => _store?.lastSync;
 

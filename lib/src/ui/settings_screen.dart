@@ -1,7 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../app_state.dart';
+import '../models/todo.dart';
 import 'format.dart';
+
+/// Zweispaltige Eigenschaften-Tabelle mit kopierbaren Werten.
+class _PropertyTable extends StatelessWidget {
+  const _PropertyTable({required this.rows});
+
+  final Map<String, String> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Table(
+      columnWidths: const {
+        0: IntrinsicColumnWidth(),
+        1: FlexColumnWidth(),
+      },
+      children: [
+        for (final e in rows.entries)
+          TableRow(children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 16, bottom: 6),
+              child: Text(e.key,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: SelectableText(e.value),
+            ),
+          ]),
+      ],
+    );
+  }
+}
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.state});
@@ -87,7 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.state;
+    final AppState state = widget.state;
     return Scaffold(
       appBar: AppBar(title: const Text('Einstellungen')),
       body: Center(
@@ -193,6 +226,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: const Icon(Icons.restart_alt),
                     label: const Text('App zurücksetzen'),
                   ),
+                ),
+                const Divider(height: 40),
+                Text('Eigenschaften',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (context, snap) {
+                    final info = snap.data;
+                    return _PropertyTable(rows: {
+                      'Version': info == null
+                          ? '…'
+                          : '${info.version} (Build ${info.buildNumber})',
+                      'Daten-Repository':
+                          '${state.config!.owner}/${state.config!.repo} @ ${state.config!.branch}',
+                      'Verschlüsselung':
+                          'AES-256-GCM, Argon2id (Schema v$kSchemaVersion)',
+                      'ToDos gesamt': '${state.todos.length}',
+                      'Lokaler Datenpfad': state.baseDir,
+                      'Quellcode':
+                          'github.com/SebastianWeber/encrypted-todo-app',
+                    });
+                  },
                 ),
                 const SizedBox(height: 24),
               ],

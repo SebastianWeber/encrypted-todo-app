@@ -20,6 +20,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   http: ^1.2.0
   path_provider: ^2.1.4
+  package_info_plus: ^8.0.0
   uuid: ^4.4.0
   intl: any # Version wird von flutter_localizations vorgegeben
   # >=22: behebt MSVC-Inkompatibilität des Windows-Plugins (STL1011)

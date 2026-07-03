@@ -22,7 +22,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _newTodo() async {
     final todo = await Navigator.of(context).push<Todo>(
-      MaterialPageRoute(builder: (_) => const TodoEditScreen()),
+      MaterialPageRoute(
+          builder: (_) =>
+              TodoEditScreen(existingTags: widget.state.allTags)),
     );
     if (todo != null) await widget.state.saveTodo(todo);
   }
