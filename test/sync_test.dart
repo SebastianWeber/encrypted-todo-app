@@ -19,6 +19,10 @@ class FakeGithubApi implements GithubApi {
   final Map<String, Uint8List> files = {};
   final Map<String, int> _revs = {};
 
+  /// Simuliert ein veraltetes Verzeichnis-Listing (eventual consistency):
+  /// diese Pfade fehlen im Listing, sind aber per getFile abrufbar.
+  final Set<String> hiddenFromListing = {};
+
   String _sha(String path) => '$path@${_revs[path]}';
 
   @override
@@ -27,7 +31,9 @@ class FakeGithubApi implements GithubApi {
   @override
   Future<Map<String, String>> listDir(String path) async => {
         for (final p in files.keys)
-          if (p.startsWith('$path/') && !p.substring(path.length + 1).contains('/'))
+          if (p.startsWith('$path/') &&
+              !p.substring(path.length + 1).contains('/') &&
+              !hiddenFromListing.contains(p))
             p.substring(path.length + 1): _sha(p),
       };
 
@@ -165,6 +171,56 @@ void main() {
     // B sieht die Konfliktkopie nach dem nächsten Sync ebenfalls.
     await syncB.sync();
     expect(storeB.todos, hasLength(2));
+  });
+
+  test(
+      'Konflikt: lokal gewinnt — überschriebene Remote-Fassung bleibt als Kopie',
+      () async {
+    final (storeA, syncA) = await makeDevice();
+    final todo = Todo(title: 'Protokoll');
+    await storeA.upsert(todo);
+    await syncA.sync();
+
+    final (storeB, syncB) = await makeDevice();
+    await syncB.sync();
+
+    // B ändert zuerst und synct (Remote = B-Fassung, älterer Zeitstempel).
+    final localB = storeB.byId(todo.id)!..title = 'Protokoll (von B)';
+    await storeB.upsert(localB);
+    await syncB.sync();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    // A ändert später auf veraltetem Stand und synct: A gewinnt (jünger),
+    // aber Bs Fassung darf nicht stillschweigend verloren gehen.
+    final localA = storeA.byId(todo.id)!..title = 'Protokoll (von A)';
+    await storeA.upsert(localA);
+    final result = await syncA.sync();
+
+    expect(result.conflicts, 1);
+    expect(storeA.byId(todo.id)!.title, 'Protokoll (von A)');
+    final copies =
+        storeA.todos.where((t) => t.title.contains('(Konflikt)')).toList();
+    expect(copies, hasLength(1));
+    expect(copies.single.title, contains('(von B)'));
+    expect(api.files.keys.where((p) => p.startsWith('todos/')), hasLength(2));
+
+    // B sieht nach dem nächsten Sync A-Fassung und Kopie.
+    await syncB.sync();
+    expect(storeB.byId(todo.id)!.title, 'Protokoll (von A)');
+    expect(storeB.todos, hasLength(2));
+  });
+
+  test('Veraltetes Listing führt nicht zu lokaler Löschung', () async {
+    final (store, sync) = await makeDevice();
+    final todo = Todo(title: 'Wichtig, nicht löschen');
+    await store.upsert(todo);
+    await sync.sync();
+
+    // Listing "vergisst" die Datei, getFile findet sie weiterhin.
+    api.hiddenFromListing.add('todos/${todo.id}.enc');
+    await sync.sync();
+
+    expect(store.byId(todo.id), isNotNull);
   });
 
   test('Konflikt: Löschung verliert gegen Änderung', () async {

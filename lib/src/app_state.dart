@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'crypto/crypto_service.dart';
 import 'models/recurrence_logic.dart';
@@ -14,7 +14,7 @@ import 'sync/github_api.dart';
 import 'sync/sync_service.dart';
 
 /// Zentraler App-Zustand: Konfiguration, lokaler Store, Sync, Erinnerungen.
-class AppState extends ChangeNotifier {
+class AppState extends ChangeNotifier with WidgetsBindingObserver {
   AppState({
     required this.configStore,
     required this.baseDir,
@@ -52,7 +52,18 @@ class AppState extends ChangeNotifier {
 
   // ------------------------------------------------------------ Start
 
+  /// Beim Zurückkehren in den Vordergrund sofort synchronisieren — sonst
+  /// arbeitet man auf einem veralteten Stand und überschreibt beim nächsten
+  /// Speichern Änderungen anderer Geräte.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(syncNow(silent: true));
+    }
+  }
+
   Future<void> initialize() async {
+    WidgetsBinding.instance.addObserver(this);
     config = await configStore.load();
     if (config != null && config!.masterKeyB64.isNotEmpty) {
       _key = SecretKey(base64Decode(config!.masterKeyB64));
@@ -228,6 +239,16 @@ class AppState extends ChangeNotifier {
   // ------------------------------------------------------------ CRUD
 
   Future<void> saveTodo(Todo todo) async {
+    // Veralteter Editor-Stand: Wurde das ToDo zwischenzeitlich durch einen
+    // Pull aktualisiert (anderes Objekt, jüngerer Zeitstempel), die dortige
+    // Fassung als Konfliktkopie retten statt sie stillschweigend zu
+    // überschreiben.
+    final current = _store!.byId(todo.id);
+    if (current != null &&
+        !identical(current, todo) &&
+        current.updatedAt.isAfter(todo.updatedAt)) {
+      await _store!.upsert(conflictCopyOf(current));
+    }
     await _store!.upsert(todo);
     await notifications.scheduleForTodo(todo);
     notifyListeners();
@@ -294,6 +315,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _autoSyncTimer?.cancel();
     super.dispose();
   }

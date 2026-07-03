@@ -96,40 +96,31 @@ class SyncService {
     final remoteTodo = Todo.fromJson(await crypto.decryptJson(
         remoteFile.content!, key) as Map<String, dynamic>);
 
+    // Beide Fassungen bleiben erhalten: die unterlegene wird als
+    // Konfliktkopie gerettet — egal, welche Seite gewinnt.
+    result.conflicts++;
     if (remoteTodo.updatedAt.isAfter(local.updatedAt)) {
-      // Remote gewinnt: lokale Fassung als Konfliktkopie aufheben,
-      // Remote-Stand übernehmen.
-      result.conflicts++;
-      final conflictCopy = Todo(
-        title: '${local.title} (Konflikt)',
-        description: local.description,
-        status: local.status,
-        priority: local.priority,
-        due: local.due,
-        dueHasTime: local.dueHasTime,
-        start: local.start,
-        tags: List.of(local.tags),
-        list: local.list,
-        subtasks: local.subtasks
-            .map((s) => Subtask(text: s.text, done: s.done))
-            .toList(),
-        recurrence: local.recurrence,
-        reminders: List.of(local.reminders),
-      );
+      // Remote gewinnt: lokale Fassung als Kopie aufheben, Remote übernehmen.
+      final conflictCopy = conflictCopyOf(local);
       store.remoteShas[op.id] = remoteFile.sha;
       await store.upsert(remoteTodo, fromRemote: true);
       store.markSynced(op);
-      await store.upsert(conflictCopy); // landet als neue Datei in der Queue
-      final copyOp =
-          store.pending.where((p) => p.id == conflictCopy.id).firstOrNull;
-      if (copyOp != null) await _pushUpsert(copyOp, result);
+      await _pushNewCopy(conflictCopy, result);
     } else {
-      // Lokal gewinnt: mit aktuellem Remote-SHA erneut schreiben.
+      // Lokal gewinnt: überschriebene Remote-Fassung als Kopie aufheben.
+      final conflictCopy = conflictCopyOf(remoteTodo);
       final newSha = await api.putFile(_todoPath(op.id), bytes, _commitMessage,
           sha: remoteFile.sha);
       store.markSynced(op, newSha: newSha);
       result.pushed++;
+      await _pushNewCopy(conflictCopy, result);
     }
+  }
+
+  Future<void> _pushNewCopy(Todo copy, SyncResult result) async {
+    await store.upsert(copy); // landet als neue Datei in der Queue
+    final copyOp = store.pending.where((p) => p.id == copy.id).firstOrNull;
+    if (copyOp != null) await _pushUpsert(copyOp, result);
   }
 
   Future<void> _pushDelete(PendingOp op, SyncResult result) async {
@@ -178,7 +169,8 @@ class SyncService {
       result.pulled++;
     }
 
-    // Remote gelöschte ToDos lokal entfernen.
+    // Remote gelöschte ToDos lokal entfernen. Das Verzeichnis-Listing kann
+    // veraltet sein — vor dem Löschen die Datei einzeln verifizieren.
     final remoteIds = listing.keys
         .where((n) => n.endsWith('.enc'))
         .map((n) => n.substring(0, n.length - 4))
@@ -186,6 +178,17 @@ class SyncService {
     final locallyKnown = List.of(store.remoteShas.keys);
     for (final id in locallyKnown) {
       if (remoteIds.contains(id) || store.hasPendingFor(id)) continue;
+      final still = await api.getFile(_todoPath(id));
+      if (still != null) {
+        // Datei existiert doch (Listing war veraltet) — ggf. übernehmen.
+        if (still.sha != store.remoteShas[id]) {
+          final todo = Todo.fromJson(await crypto.decryptJson(
+              still.content!, key) as Map<String, dynamic>);
+          store.remoteShas[id] = still.sha;
+          await store.upsert(todo, fromRemote: true);
+        }
+        continue;
+      }
       await store.remove(id, fromRemote: true);
       result.pulled++;
     }

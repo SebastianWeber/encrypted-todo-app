@@ -196,6 +196,24 @@ class Todo {
   Todo copy() => Todo.fromJson(toJson());
 }
 
+/// Kopie mit neuer ID und "(Konflikt)"-Titel. Rettet bei
+/// Last-write-wins-Konflikten die unterlegene Fassung vor dem Überschreiben.
+Todo conflictCopyOf(Todo t) => Todo(
+      title: '${t.title} (Konflikt)',
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      due: t.due,
+      dueHasTime: t.dueHasTime,
+      start: t.start,
+      tags: List.of(t.tags),
+      list: t.list,
+      subtasks:
+          t.subtasks.map((s) => Subtask(text: s.text, done: s.done)).toList(),
+      recurrence: t.recurrence,
+      reminders: List.of(t.reminders),
+    );
+
 /// Kompakter Index-Eintrag für index.enc (schneller Bootstrap neuer Geräte).
 class IndexEntry {
   const IndexEntry({
