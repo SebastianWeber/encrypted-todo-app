@@ -27,9 +27,11 @@ class NotificationService {
     } catch (_) {
       // Fallback: UTC — Erinnerungen kommen dann ggf. verschoben.
     }
-    await _plugin.initialize(const InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    ));
+    await _plugin.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await android?.requestNotificationsPermission();
@@ -50,11 +52,11 @@ class NotificationService {
       final at = todo.reminders[i];
       if (at.isBefore(DateTime.now())) continue;
       await _plugin.zonedSchedule(
-        _notificationId(todo.id, i),
-        todo.title,
-        todo.due == null ? 'Erinnerung' : 'Fällig: ${_formatDue(todo)}',
-        tz.TZDateTime.from(at, tz.local),
-        const NotificationDetails(
+        id: _notificationId(todo.id, i),
+        title: todo.title,
+        body: todo.due == null ? 'Erinnerung' : 'Fällig: ${_formatDue(todo)}',
+        scheduledDate: tz.TZDateTime.from(at, tz.local),
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'reminders',
             'Erinnerungen',
@@ -72,7 +74,7 @@ class NotificationService {
     if (!_ready) return;
     // Großzügig alle möglichen Erinnerungs-Slots aufräumen.
     for (var i = 0; i < 10; i++) {
-      await _plugin.cancel(_notificationId(todo.id, i));
+      await _plugin.cancel(id: _notificationId(todo.id, i));
     }
   }
 

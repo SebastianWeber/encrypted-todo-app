@@ -97,9 +97,11 @@ jobs:
         with:
           name: apk
       - name: fdroidserver installieren
+        # pip statt apt: das Ubuntu-Paket bringt ein zu altes androguard mit,
+        # das APKs moderner AGP-Versionen nicht parsen kann ("res1 must be zero").
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fdroidserver
+          pipx install fdroidserver
+          echo "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)" >> "$GITHUB_PATH"
       - name: F-Droid-Repository erzeugen
         run: |
           mkdir -p fdroid/repo
