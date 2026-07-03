@@ -1,0 +1,149 @@
+# Release-Pipeline: läuft bei jedem Git-Tag "v*" (z. B. v1.0.0).
+#
+# Erzeugt:
+#  1. Windows-ZIP (portable)          -> GitHub-Release-Assets
+#  2. signierte Android-APK           -> GitHub-Release-Assets
+#  3. F-Droid-Updatesite              -> Branch gh-pages (GitHub Pages)
+#
+# Benötigte Repository-Secrets (Settings -> Secrets and variables -> Actions):
+#  KEYSTORE_P12_BASE64  - PKCS12-Keystore (Base64), Alias "release" — signiert
+#                         sowohl die APK als auch den F-Droid-Index
+#  KEYSTORE_PASSWORD    - Passwort des Keystores
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.44.4
+
+jobs:
+  windows:
+    name: Windows-Build (ZIP)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Version aus Tag ableiten
+        id: ver
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - run: flutter pub get
+      - run: flutter build windows --release --build-name=${{ steps.ver.outputs.version }} --build-number=${{ github.run_number }}
+      - name: ZIP packen
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath EncryptedTodo-Windows-${{ github.ref_name }}.zip
+      - name: An Release anhängen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: EncryptedTodo-Windows-*.zip
+
+  android:
+    name: Android-Build (signierte APK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Version aus Tag ableiten
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Signatur-Keystore einrichten
+        run: |
+          echo "${{ secrets.KEYSTORE_P12_BASE64 }}" | base64 -d > android/app/release-keystore.p12
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=release
+          storeFile=release-keystore.p12
+          EOF
+      - run: flutter pub get
+      - run: flutter build apk --release --build-name=${{ steps.ver.outputs.version }} --build-number=${{ github.run_number }}
+      - name: APK benennen
+        run: cp build/app/outputs/flutter-apk/app-release.apk encrypted-todo-app-${{ github.ref_name }}.apk
+      - name: An Release anhängen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: encrypted-todo-app-*.apk
+      - name: APK als Artefakt für F-Droid-Job
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: encrypted-todo-app-*.apk
+
+  fdroid:
+    name: F-Droid-Updatesite veröffentlichen
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - name: APK laden
+        uses: actions/download-artifact@v4
+        with:
+          name: apk
+      - name: fdroidserver installieren
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fdroidserver
+      - name: F-Droid-Repository erzeugen
+        run: |
+          mkdir -p fdroid/repo
+          cp encrypted-todo-app-*.apk fdroid/repo/
+          echo "${{ secrets.KEYSTORE_P12_BASE64 }}" | base64 -d > fdroid/keystore.p12
+          cat > fdroid/config.yml <<EOF
+          repo_url: https://sebastianweber.github.io/encrypted-todo-app/repo
+          repo_name: Encrypted ToDo App Repo
+          repo_description: Update-Repository der verschlüsselten ToDo-App von Sebastian Weber.
+          repo_keyalias: release
+          keystore: keystore.p12
+          keystorepass: ${{ secrets.KEYSTORE_PASSWORD }}
+          keypass: ${{ secrets.KEYSTORE_PASSWORD }}
+          archive_older: 0
+          EOF
+          cd fdroid
+          fdroid update --create-metadata
+      - name: Repo-Fingerprint ermitteln
+        id: fpr
+        run: |
+          FPR=$(keytool -exportcert -keystore fdroid/keystore.p12 -alias release \
+                -storepass '${{ secrets.KEYSTORE_PASSWORD }}' 2>/dev/null \
+                | sha256sum | cut -d' ' -f1 | tr 'a-f' 'A-F')
+          echo "fingerprint=$FPR" >> "$GITHUB_OUTPUT"
+      - name: Pages-Site zusammenstellen (ohne Keystore/Config!)
+        run: |
+          mkdir -p site
+          cp -r fdroid/repo site/repo
+          rm -f site/repo/keystore.p12 site/repo/config.yml
+          cat > site/index.html <<EOF
+          <!doctype html><html lang="de"><meta charset="utf-8">
+          <title>Encrypted ToDo App – F-Droid-Repo</title>
+          <body style="font-family:sans-serif;max-width:40em;margin:2em auto">
+          <h1>Encrypted ToDo App – Update-Repository</h1>
+          <p>Diese Seite ist eine F-Droid-Updatesite. Im F-Droid-Client unter
+          „Einstellungen → Paketquellen" folgende URL hinzufügen:</p>
+          <p><code>https://sebastianweber.github.io/encrypted-todo-app/repo?fingerprint=${{ steps.fpr.outputs.fingerprint }}</code></p>
+          <p>Aktuelle Version: ${{ github.ref_name }} (Build ${{ github.run_number }})</p>
+          <p>Windows-Version: siehe <a href="https://github.com/SebastianWeber/encrypted-todo-app/releases">GitHub Releases</a>.</p>
+          </body></html>
+          EOF
+      - name: Auf gh-pages veröffentlichen
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
