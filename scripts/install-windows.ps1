@@ -42,7 +42,33 @@ Write-Host "Lade $($asset.name) ($($release.tag_name)) ..."
 $zipPath = Join-Path $env:TEMP $asset.name
 Invoke-WebRequest $asset.browser_download_url -OutFile $zipPath
 
-if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir }
+# Laufende App beenden — sonst ist die EXE gesperrt und das Update scheitert.
+$running = Get-Process -Name 'encrypted_todo_app' -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Host 'Beende laufende App für das Update ...'
+    $running | Stop-Process -Force
+    Start-Sleep -Seconds 2
+}
+
+if (Test-Path $InstallDir) {
+    # Kurze Wiederholungsschleife: Windows gibt Datei-Handles manchmal
+    # erst mit Verzögerung frei (Prozessende, Virenscanner).
+    $attempt = 0
+    while ($true) {
+        try {
+            Remove-Item -Recurse -Force $InstallDir -ErrorAction Stop
+            break
+        } catch {
+            $attempt++
+            if ($attempt -ge 5) {
+                throw ("Installationsordner ist blockiert ($InstallDir). " +
+                    "Bitte die App (und ggf. den Ordner im Explorer) schließen " +
+                    "und das Skript erneut ausführen. Details: $_")
+            }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
 Expand-Archive $zipPath -DestinationPath $InstallDir
 Remove-Item $zipPath
 
