@@ -17,9 +17,13 @@ class SyncResult {
   int pulled = 0;
   int conflicts = 0;
 
+  /// Beim Pull übersprungene, nicht entschlüsselbare Dateien.
+  int skipped = 0;
+
   @override
   String toString() =>
-      'gesendet: $pushed, empfangen: $pulled, Konflikte: $conflicts';
+      'gesendet: $pushed, empfangen: $pulled, Konflikte: $conflicts'
+      '${skipped > 0 ? ', übersprungen: $skipped' : ''}';
 }
 
 /// Synchronisiert den lokalen Store mit dem GitHub-Repo.
@@ -162,11 +166,17 @@ class SyncService {
       if (store.remoteShas[id] == entry.value) continue; // unverändert
       final file = await api.getFile(_todoPath(id));
       if (file == null) continue;
-      final todo = Todo.fromJson(await crypto.decryptJson(file.content!, key)
-          as Map<String, dynamic>);
-      store.remoteShas[id] = file.sha;
-      await store.upsert(todo, fromRemote: true);
-      result.pulled++;
+      // Eine einzelne defekte Datei darf nicht den gesamten Sync blockieren:
+      // überspringen und beim nächsten Sync erneut versuchen.
+      try {
+        final todo = Todo.fromJson(await crypto.decryptJson(file.content!, key)
+            as Map<String, dynamic>);
+        store.remoteShas[id] = file.sha;
+        await store.upsert(todo, fromRemote: true);
+        result.pulled++;
+      } on DecryptionFailedException {
+        result.skipped++;
+      }
     }
 
     // Remote gelöschte ToDos lokal entfernen. Das Verzeichnis-Listing kann

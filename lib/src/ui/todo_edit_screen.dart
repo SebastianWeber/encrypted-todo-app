@@ -31,6 +31,12 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
   final _intervalInput = TextEditingController(text: '1');
   final _tagsFocus = FocusNode();
 
+  /// Feldtext zum Zeitpunkt der Vorschlagsberechnung. RawAutocomplete
+  /// ersetzt bei Auswahl den kompletten Feldtext durch die Option, BEVOR
+  /// onSelected läuft — ohne diese Kopie gingen die vorhandenen Tags
+  /// verloren.
+  String _tagsTextAtSuggestion = '';
+
   late TodoStatus _status;
   late TodoPriority _priority;
   DateTime? _due;
@@ -376,6 +382,7 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
                   focusNode: _tagsFocus,
                   optionsBuilder: (value) {
                     // Vorschläge fürs letzte Komma-Segment aus dem Bestand.
+                    _tagsTextAtSuggestion = value.text;
                     final parts = value.text.split(',');
                     final current = parts.last.trim().toLowerCase();
                     if (current.isEmpty) return const Iterable<String>.empty();
@@ -391,7 +398,9 @@ class _TodoEditScreenState extends State<TodoEditScreen> {
                     });
                   },
                   onSelected: (selection) {
-                    final parts = _tags.text.split(',');
+                    // Nicht _tags.text verwenden — das enthält hier bereits
+                    // nur noch die ausgewählte Option (siehe Feldkommentar).
+                    final parts = _tagsTextAtSuggestion.split(',');
                     parts[parts.length - 1] = selection;
                     final text =
                         '${parts.map((p) => p.trim()).where((p) => p.isNotEmpty).join(', ')}, ';

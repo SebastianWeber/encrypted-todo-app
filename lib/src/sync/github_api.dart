@@ -88,6 +88,12 @@ class GithubApi {
   }
 
   /// Lädt eine Datei; null bei 404.
+  ///
+  /// Der Inhalt wird über die Git-Blobs-API geholt, NICHT aus dem
+  /// content-Feld der Contents-API: Letztere unterzieht Dateien einer
+  /// Zeichensatz-Erkennung und transkodiert vermeintliches UTF-16 nach
+  /// UTF-8 — zufällige Ciphertext-Bytes können so verfälscht ankommen.
+  /// Die Blobs-API liefert das Blob byte-genau.
   Future<RemoteFile?> getFile(String path) async {
     final res = await _client.get(
         _contentsUri(path, {'ref': config.branch}),
@@ -97,13 +103,22 @@ class GithubApi {
       throw GithubApiException(res.statusCode, _errorMessage(res));
     }
     final json = jsonDecode(res.body) as Map<String, dynamic>;
-    final contentB64 =
-        (json['content'] as String? ?? '').replaceAll(RegExp(r'\s'), '');
-    return RemoteFile(
-      path: path,
-      sha: json['sha'] as String,
-      content: base64Decode(contentB64),
+    final sha = json['sha'] as String;
+    return RemoteFile(path: path, sha: sha, content: await _getBlob(sha));
+  }
+
+  Future<Uint8List> _getBlob(String sha) async {
+    final res = await _client.get(
+      Uri.https('api.github.com',
+          '/repos/${config.owner}/${config.repo}/git/blobs/$sha'),
+      headers: _headers,
     );
+    if (res.statusCode != 200) {
+      throw GithubApiException(res.statusCode, _errorMessage(res));
+    }
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    return base64Decode(
+        (json['content'] as String? ?? '').replaceAll(RegExp(r'\s'), ''));
   }
 
   /// Legt eine Datei an oder aktualisiert sie. [sha] ist beim Aktualisieren
